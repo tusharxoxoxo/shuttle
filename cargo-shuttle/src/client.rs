@@ -92,46 +92,10 @@ impl Client {
         self.get(path).await
     }
 
-    pub async fn create_project(
-        &self,
-        project: &RawProjectName,
-        config: project::Config,
-    ) -> Result<project::Response> {
-        let path = format!("/projects/{}", project.as_str());
-
-        self.post(path, Some(config))
-            .await
-            .context("failed to make create project request")?
-            .to_json()
-            .await
-    }
-
-    pub async fn clean_project(&self, project: &RawProjectName) -> Result<Vec<String>> {
-        let path = format!("/projects/{}/clean", project.as_str(),);
-
-        self.post(path, Option::<String>::None)
-            .await
-            .context("failed to get clean output")?
-            .to_json()
-            .await
-    }
-
-    pub async fn get_project(&self, project: &RawProjectName) -> Result<project::Response> {
-        let path = format!("/projects/{}", project.as_str());
-
-        self.get(path).await
-    }
-
     pub async fn get_projects_list(&self, page: u32, limit: u32) -> Result<Vec<project::Response>> {
         let path = format!("/projects?page={}&limit={}", page.saturating_sub(1), limit);
 
         self.get(path).await
-    }
-
-    pub async fn delete_project(&self, project: &RawProjectName) -> Result<project::Response> {
-        let path = format!("/projects/{}", project.as_str());
-
-        self.delete(path).await
     }
 
     pub async fn get_secrets(&self, project: &RawProjectName) -> Result<Vec<secret::Response>> {
@@ -241,22 +205,6 @@ impl Client {
             .context("failed to make get request")?
             .to_json()
             .await
-    }
-
-    async fn post<T: Serialize>(&self, path: String, body: Option<T>) -> Result<Response> {
-        let url = format!("{}{}", self.api_url, path);
-
-        let mut builder = Self::get_retry_client().post(url);
-
-        builder = self.set_builder_auth(builder);
-
-        if let Some(body) = body {
-            let body = serde_json::to_string(&body)?;
-            builder = builder.body(body);
-            builder = builder.header("Content-Type", "application/json");
-        }
-
-        Ok(builder.send().await?)
     }
 
     async fn put<T: Serialize>(&self, path: String, body: Option<T>) -> Result<Response> {
