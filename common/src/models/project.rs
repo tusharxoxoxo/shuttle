@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use comfy_table::{
     modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, CellAlignment, Color,
     ContentArrangement, Table,
@@ -25,6 +26,7 @@ pub struct Response {
     pub name: String,
     #[cfg_attr(feature = "openapi", schema(value_type = shuttle_common::models::project::State))]
     pub state: State,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, EnumString)]
@@ -183,6 +185,7 @@ pub struct Config {
 pub struct AdminResponse {
     pub project_name: String,
     pub account_name: String,
+    pub created_at: DateTime<Utc>,
 }
 
 pub fn get_table(projects: &Vec<Response>, page: u32) -> String {
@@ -208,6 +211,7 @@ pub fn get_table(projects: &Vec<Response>, page: u32) -> String {
             .set_header(vec![
                 Cell::new("Project Name").set_alignment(CellAlignment::Center),
                 Cell::new("Status").set_alignment(CellAlignment::Center),
+                Cell::new("Created At").set_alignment(CellAlignment::Center),
             ]);
 
         for project in projects.iter() {
@@ -216,6 +220,7 @@ pub fn get_table(projects: &Vec<Response>, page: u32) -> String {
                 Cell::new(&project.state)
                     .fg(project.state.get_color())
                     .set_alignment(CellAlignment::Center),
+                Cell::new(&project.created_at),
             ]);
         }
 

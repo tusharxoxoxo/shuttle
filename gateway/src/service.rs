@@ -9,6 +9,7 @@ use axum::headers::HeaderMapExt;
 use axum::http::Request;
 use axum::response::Response;
 use bollard::{Docker, API_DEFAULT_VERSION};
+use chrono::{DateTime, Utc};
 use fqdn::{Fqdn, FQDN};
 use http::Uri;
 use hyper::client::connect::dns::GaiResolver;
@@ -284,9 +285,9 @@ impl GatewayService {
         account_name: &AccountName,
         offset: u32,
         limit: u32,
-    ) -> Result<impl Iterator<Item = (ProjectName, Project)>, Error> {
+    ) -> Result<impl Iterator<Item = (ProjectName, Project, DateTime<Utc>)>, Error> {
         let mut query = QueryBuilder::new(
-            "SELECT project_name, project_state FROM projects WHERE account_name = ",
+            "SELECT project_name, project_state, created_at FROM projects WHERE account_name = ",
         );
 
         query
@@ -307,6 +308,7 @@ impl GatewayService {
                 (
                     row.get("project_name"),
                     row.get::<SqlxJson<Project>, _>("project_state").0,
+                    row.get("created_at"),
                 )
             });
         Ok(iter)
@@ -571,13 +573,14 @@ impl GatewayService {
     pub async fn iter_projects_detailed(
         &self,
     ) -> Result<impl Iterator<Item = ProjectDetails>, Error> {
-        let iter = query("SELECT project_name, account_name FROM projects")
+        let iter = query("SELECT project_name, account_name, created_at FROM projects")
             .fetch_all(&self.db)
             .await?
             .into_iter()
             .map(|row| ProjectDetails {
                 project_name: row.try_get("project_name").unwrap(),
                 account_name: row.try_get("account_name").unwrap(),
+                created_at: Utc::now(),
             });
         Ok(iter)
     }
@@ -798,6 +801,7 @@ pub mod tests {
         let neo: AccountName = "neo".parse().unwrap();
         let trinity: AccountName = "trinity".parse().unwrap();
         let matrix: ProjectName = "matrix".parse().unwrap();
+        let morpheus: DateTime<Utc> = "morpheus".parse().unwrap();
 
         let creating_same_project_name = |project: &Project, project_name: &ProjectName| {
             matches!(
@@ -823,6 +827,7 @@ pub mod tests {
             ProjectDetails {
                 project_name: matrix.clone(),
                 account_name: neo.clone(),
+                created_at: morpheus.clone(),
             }
         );
         assert_eq!(

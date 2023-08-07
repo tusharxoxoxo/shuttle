@@ -111,12 +111,15 @@ impl StatusResponse {
 )]
 async fn get_project(
     State(RouterState { service, .. }): State<RouterState>,
-    ScopedUser { scope, .. }: ScopedUser,
+    ScopedUser {
+        scope, created_at, ..
+    }: ScopedUser,
 ) -> Result<AxumJson<project::Response>, Error> {
     let state = service.find_project(&scope).await?.into();
     let response = project::Response {
         name: scope.to_string(),
         state,
+        created_at,
     };
 
     Ok(AxumJson(response))
@@ -147,6 +150,7 @@ async fn get_projects_list(
         .map(|project| project::Response {
             name: project.0.to_string(),
             state: project.1.into(),
+            created_at: project.2,
         })
         .collect();
 
@@ -188,6 +192,7 @@ async fn create_project(
     let response = project::Response {
         name: project.to_string(),
         state: state.into(),
+        created_at: Default::default(),
     };
 
     Ok(AxumJson(response))
@@ -216,6 +221,7 @@ async fn destroy_project(
     let mut response = project::Response {
         name: project.to_string(),
         state: state.into(),
+        created_at: Default::default(),
     };
 
     if response.state == shuttle_common::models::project::State::Destroyed {

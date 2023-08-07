@@ -36,6 +36,7 @@ serde_json = { workspace = true }
 sqlx = { workspace = true, features = [
     "sqlite",
     "json",
+    "chrono",
     "runtime-tokio-rustls",
     "migrate",
 ] }

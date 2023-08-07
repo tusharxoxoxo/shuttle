@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use axum::extract::{FromRef, FromRequestParts, Path};
 use axum::http::request::Parts;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shuttle_common::claims::{Claim, Scope};
 use tracing::{trace, Span};
@@ -60,6 +61,7 @@ where
 pub struct ScopedUser {
     pub user: User,
     pub scope: ProjectName,
+    pub created_at: DateTime<Utc>,
 }
 
 #[async_trait]
@@ -82,7 +84,11 @@ where
         };
 
         if user.projects.contains(&scope) || user.claim.scopes.contains(&Scope::Admin) {
-            Ok(Self { user, scope })
+            Ok(Self {
+                user,
+                scope,
+                created_at: Default::default(),
+            })
         } else {
             Err(Error::from(ErrorKind::ProjectNotFound))
         }

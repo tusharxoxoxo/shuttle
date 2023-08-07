@@ -13,6 +13,7 @@ use acme::AcmeClientError;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use bollard::Docker;
+use chrono::{DateTime, Utc};
 use futures::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
 use service::ContainerSettings;
@@ -208,6 +209,7 @@ impl<'de> Deserialize<'de> for AccountName {
 pub struct ProjectDetails {
     pub project_name: ProjectName,
     pub account_name: AccountName,
+    pub created_at: DateTime<Utc>,
 }
 
 impl From<ProjectDetails> for shuttle_common::models::project::AdminResponse {
@@ -215,6 +217,7 @@ impl From<ProjectDetails> for shuttle_common::models::project::AdminResponse {
         Self {
             project_name: project.project_name.to_string(),
             account_name: project.account_name.to_string(),
+            created_at: project.created_at,
         }
     }
 }
