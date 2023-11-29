@@ -458,7 +458,7 @@ jobs:
             LOGGER_POSTGRES_URI=${<< parameters.logger-postgres-uri >>} \
             STRIPE_SECRET_KEY=${<< parameters.stripe-secret-key >>} \
             AUTH_JWTSIGNING_PRIVATE_KEY=${<< parameters.jwt-signing-private-key >>} \
-            CONTROL_DB_POSTGRES_URI=${<< parameters.control-db-postgres-uri >>}
+            CONTROL_DB_POSTGRES_URI=${<< parameters.control-db-postgres-uri >>} \
             make deploy
       - when:
           condition: 
@@ -829,9 +829,9 @@ workflows:
     jobs:
       - approve-push-unstable:
           type: approval
-          filters:
-            branches:
-              only: main
+          # filters:
+          #   branches:
+          #     only: main
       - build-and-push:
           name: build-and-push-unstable
           aws-access-key-id: DEV_AWS_ACCESS_KEY_ID
