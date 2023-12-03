@@ -1276,6 +1276,25 @@ impl ProjectReady {
     }
 }
 
+#[instrument(name = "getting container stats from Docker", skip_all)]
+async fn get_container_stats(
+    ctx: &impl DockerContext,
+    container: &ContainerInspectResponse,
+) -> Result<Stats, ProjectError> {
+    Ok(ctx
+        .docker()
+        .stats(
+            safe_unwrap!(container.id),
+            Some(StatsOptions {
+                one_shot: true,
+                stream: false,
+            }),
+        )
+        .next()
+        .await
+        .unwrap()?)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ProjectRunning {
     Ready(ProjectReady),
@@ -1314,18 +1333,7 @@ where
             }));
         }
 
-        let new_stat = ctx
-            .docker()
-            .stats(
-                safe_unwrap!(container.id),
-                Some(StatsOptions {
-                    one_shot: true,
-                    stream: false,
-                }),
-            )
-            .next()
-            .await
-            .unwrap()?;
+        let new_stat = get_container_stats(ctx, &container).await?;
 
         stats.push_back(new_stat.clone());
 
@@ -1443,6 +1451,7 @@ impl Service {
             .map_err(|err| err.into())
     }
 
+    #[instrument(name = "calling status endpoint on container", skip_all, fields(project_name = %self.name))]
     pub async fn is_healthy(&mut self) -> bool {
         let uri = self.uri(format!("/projects/{}/status", self.name)).unwrap();
         let resp = timeout(IS_HEALTHY_TIMEOUT, CLIENT.get(uri)).await;
