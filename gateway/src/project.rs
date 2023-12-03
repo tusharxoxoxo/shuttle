@@ -4,8 +4,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use bollard::container::{
-    Config, CreateContainerOptions, KillContainerOptions, RemoveContainerOptions, Stats,
-    StatsOptions, StopContainerOptions,
+    Config, CreateContainerOptions, KillContainerOptions, RemoveContainerOptions,
+    StopContainerOptions,
 };
 use bollard::errors::Error as DockerError;
 use bollard::models::{ContainerInspectResponse, ContainerStateStatusEnum};
@@ -22,7 +22,8 @@ use hyper::client::HttpConnector;
 use hyper::{Body, Client};
 use once_cell::sync::Lazy;
 use rand::distributions::{Alphanumeric, DistString};
-use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer, Serialize};
 use shuttle_common::backends::headers::{X_SHUTTLE_ACCOUNT_NAME, X_SHUTTLE_ADMIN_SECRET};
 use shuttle_common::constants::{default_idle_minutes, DEFAULT_IDLE_MINUTES};
 use shuttle_common::models::project::ProjectName;
@@ -169,6 +170,18 @@ impl From<DockerError> for Error {
         error!(error = %err, "internal Docker error");
         Self::source(ErrorKind::Internal, err)
     }
+}
+
+/// Allow some fields to default to their default value if deserializing them fails
+/// https://users.rust-lang.org/t/solved-serde-deserialization-on-error-use-default-values/6681/2
+fn ok_or_default<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    T: DeserializeOwned + Default,
+    D: Deserializer<'de>,
+{
+    // Convert to `Value` first so that we capture the whole input in case it fails later on the specific type
+    let v: serde_json::Value = Deserialize::deserialize(deserializer)?;
+    Ok(T::deserialize(v).unwrap_or_default())
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1177,15 +1190,15 @@ pub struct ProjectStarted {
     #[serde(default)]
     start_count: usize,
     // Use default for backward compatibility. Can be removed when all projects in the DB have this property set
-    #[serde(default)]
-    stats: VecDeque<Stats>,
+    #[serde(default, deserialize_with = "ok_or_default")]
+    stats: VecDeque<u64>,
 }
 
 impl ProjectStarted {
     pub fn new(
         container: ContainerInspectResponse,
         start_count: usize,
-        stats: VecDeque<Stats>,
+        stats: VecDeque<u64>,
     ) -> Self {
         Self {
             container,
@@ -1258,15 +1271,15 @@ pub struct ProjectReady {
     container: ContainerInspectResponse,
     service: Service,
     // Use default for backward compatibility. Can be removed when all projects in the DB have this property set
-    #[serde(default)]
-    stats: VecDeque<Stats>,
+    #[serde(default, deserialize_with = "ok_or_default")]
+    stats: VecDeque<u64>,
 }
 
 impl ProjectReady {
     pub fn new(
         container: ContainerInspectResponse,
         service: Service,
-        stats: VecDeque<Stats>,
+        stats: VecDeque<u64>,
     ) -> Self {
         Self {
             container,
@@ -1276,23 +1289,33 @@ impl ProjectReady {
     }
 }
 
-#[instrument(name = "getting container stats from Docker", skip_all)]
-async fn get_container_stats(
-    ctx: &impl DockerContext,
-    container: &ContainerInspectResponse,
-) -> Result<Stats, ProjectError> {
-    Ok(ctx
-        .docker()
-        .stats(
-            safe_unwrap!(container.id),
-            Some(StatsOptions {
-                one_shot: true,
-                stream: false,
-            }),
-        )
-        .next()
-        .await
-        .unwrap()?)
+#[instrument(name = "getting container stats from the cgroup file", skip_all)]
+async fn get_container_stats(container: &ContainerInspectResponse) -> Result<u64, ProjectError> {
+    let id = safe_unwrap!(container.id);
+
+    let usage: u64 =
+        std::fs::read_to_string(format!("/sys/fs/cgroup/cpuacct/docker/{id}/cpuacct.usage"))
+            .unwrap_or_default()
+            .parse()
+            .unwrap_or_default();
+    // TODO: the above solution only works for cgroup v1
+    // This is the version used by our server. However on my local nix setup I have cgroup v2 and had to use the
+    // following to get the 'usage_usec' which is on the first line
+    // let usage: u64 = std::fs::read_to_string(format!(
+    //     "/sys/fs/cgroup/system.slice/docker-{id}.scope/cpu.stat"
+    // ))
+    // .unwrap_or_default()
+    // .lines()
+    // .next()
+    // .unwrap()
+    // .split(' ')
+    // .nth(1)
+    // .unwrap_or_default()
+    // .parse::<u64>()
+    // .unwrap_or_default()
+    //     * 1_000;
+
+    Ok(usage)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1310,7 +1333,7 @@ where
     type Error = ProjectError;
 
     #[instrument(name = "check if container is still healthy", skip_all)]
-    async fn next(mut self, ctx: &Ctx) -> Result<Self::Next, Self::Error> {
+    async fn next(mut self, _ctx: &Ctx) -> Result<Self::Next, Self::Error> {
         let Self {
             container,
             mut service,
@@ -1333,9 +1356,9 @@ where
             }));
         }
 
-        let new_stat = get_container_stats(ctx, &container).await?;
+        let new_stat = get_container_stats(&container).await?;
 
-        stats.push_back(new_stat.clone());
+        stats.push_back(new_stat);
 
         let mut last = None;
 
@@ -1351,9 +1374,7 @@ where
             }));
         };
 
-        let cpu_per_minute = (new_stat.cpu_stats.cpu_usage.total_usage
-            - last.cpu_stats.cpu_usage.total_usage)
-            / idle_minutes;
+        let cpu_per_minute = (new_stat - last) / idle_minutes;
 
         debug!(
             "{} has {} CPU usage per minute",
