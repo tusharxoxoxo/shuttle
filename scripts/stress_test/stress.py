@@ -16,7 +16,7 @@ from typing import Awaitable, Callable, Self
 
 import httpx
 
-from stress_test.ansi_re import ansi_re
+ansi_re = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 class ProjectState(enum.Enum):
@@ -236,6 +236,7 @@ def run_with_concurrency(
 
 
 async def periodic_check(runner, projects: list[Project]):
+    await asyncio.sleep(10)
     print("[*] Starting periodic check..")
     last_check = datetime.now() - timedelta(hours=1)
     while True:
@@ -286,7 +287,7 @@ async def ping_random_projects(projects: list[Project]) -> None:
 
 
 async def run_stress_test(runner: Runner, concurrency: int):
-    long_running = gen_projects(300)
+    long_running = gen_projects(10)
     all_projects = long_running.copy()
     periodic_task = asyncio.create_task(periodic_check(runner, all_projects))
 
@@ -307,7 +308,7 @@ async def run_stress_test(runner: Runner, concurrency: int):
     ):
         print(f" [-] {project.name}: {project.state}")
 
-    cch_projects = gen_projects(800, 300)
+    cch_projects = gen_projects(10, 100)
     all_projects.extend(cch_projects)
 
     print("[+] Starting all CCH projects:")
@@ -320,16 +321,17 @@ async def run_stress_test(runner: Runner, concurrency: int):
         print(f" [-] {project.name}: {project.state}")
 
     await ainput("Press enter to continue and deploy the projects")
-    print("[+] Deploying all projects:")
+
+    asyncio.create_task(ping_random_projects(all_projects))
+
+    print("[+] Deploying all long running projects:")
     async for project in run_with_concurrency(
         concurrency,
         runner.deploy,
-        all_projects,
+        long_running,
         concurrency_jitter(concurrency, 5),
     ):
         print(f" [-] {project.name}: {project.state}")
-
-    asyncio.create_task(ping_random_projects(all_projects))
 
     await ainput("Press enter to continue and delete the projects")
 
