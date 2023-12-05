@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "stress-test"
+version = "0.1.0"
+description = ""
+authors = ["Jocelyn Boullier <jocelyn@boullier.bzh>"]
+packages = [{include = "stress_test"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+httpx = "^0.25.2"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.1.6"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
