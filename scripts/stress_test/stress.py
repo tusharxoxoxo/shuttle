@@ -169,7 +169,7 @@ class Runner:
         return project
 
     async def deploy(self, project: Project, update_state: bool = True) -> Project:
-        output = await self.shuttle(project, "deploy")
+        output = await self.shuttle(project, "deploy --ad")
         is_success = re.search(
             r"(Runtime started successf?ully)|(Finished dev)", output
         )
@@ -223,10 +223,10 @@ def run_with_concurrency(
                     yield res
 
             futs.add(asyncio.create_task(coro))
-            old_n = n
-            n = await update_concurrency_after_each_loop(old_n, datetime.now())
-            if n != old_n:
-                print(f"[.] Updating concurrency to {n}")
+            # old_n = n
+            # n = await update_concurrency_after_each_loop(old_n, datetime.now())
+            # if n != old_n:
+            #     print(f"[.] Updating concurrency to {n}")
 
         rest = await asyncio.gather(*futs)
         for res in rest:
@@ -287,34 +287,39 @@ async def ping_random_projects(projects: list[Project]) -> None:
 
 
 async def run_stress_test(runner: Runner, concurrency: int):
+    print("[+] Deleting all the projects:")
+    async for project in run_with_concurrency(concurrency, runner.delete, gen_projects(20)):
+        print(f" [-] {project.name}: {project.state}")
+    await asyncio.sleep(2)
+
     long_running = gen_projects(10)
     all_projects = long_running.copy()
     periodic_task = asyncio.create_task(periodic_check(runner, all_projects))
 
-    def start_and_deploy(idle_minutes: int):
-        async def start_and_deploy(project):
+    def start(idle_minutes: int):
+        async def start(project):
             await runner.start(project, idle_minutes=idle_minutes)
             # await runner.deploy(project)
             return project
 
-        return start_and_deploy
+        return start
 
     print("[+] Starting all long running projects:")
     async for project in run_with_concurrency(
         concurrency,
-        start_and_deploy(idle_minutes=0),
+        start(idle_minutes=0),
         long_running,
         concurrency_jitter(concurrency, 5),
     ):
         print(f" [-] {project.name}: {project.state}")
 
-    cch_projects = gen_projects(10, 100)
+    cch_projects = gen_projects(10, 20)
     all_projects.extend(cch_projects)
 
     print("[+] Starting all CCH projects:")
     async for project in run_with_concurrency(
         concurrency,
-        start_and_deploy(idle_minutes=5),
+        start(idle_minutes=5),
         cch_projects,
         concurrency_jitter(concurrency, 5),
     ):
@@ -335,8 +340,7 @@ async def run_stress_test(runner: Runner, concurrency: int):
 
     await ainput("Press enter to continue and delete the projects")
 
-
-    print("[+] Deleting all the project:")
+    print("[+] Deleting all the projects:")
     async for project in run_with_concurrency(concurrency, runner.delete, all_projects):
         print(f" [-] {project.name}: {project.state}")
 
